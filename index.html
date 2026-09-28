@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEON DRIFT // 2099</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --neon-pink: #ff00ff;
+    --neon-cyan: #00ffff;
+    --neon-purple: #b026ff;
+    --bg-deep: #0a0014;
+    --text: #f0e6ff;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    overflow-x: hidden;
+    cursor: crosshair;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--neon-pink); color: #000; }
+
+  /* ===== SCANLINES (облегчённый) ===== */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.12) 0px,
+      rgba(0, 0, 0, 0.12) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(10,0,20,0.85) 100%);
+  }
+
+  /* ===== ПРЕЛОАДЕР ===== */
+  .preloader {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-deep);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+  }
+  .preloader.done { opacity: 0; visibility: hidden; }
+
+  .preloader-title {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 14px;
+    letter-spacing: 12px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 10px var(--neon-cyan);
+  }
+
+  .preloader-bar {
+    width: 280px;
+    height: 4px;
+    background: rgba(255, 0, 255, 0.1);
+    border: 1px solid rgba(255, 0, 255, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+  .preloader-bar::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+    transition: width 0.15s;
+  }
+
+  .preloader-counter {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 42px;
+    color: var(--neon-pink);
+    text-shadow: 0 0 15px var(--neon-pink);
+    letter-spacing: 4px;
+  }
+
+  .preloader-log {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(0, 255, 255, 0.6);
+    text-transform: uppercase;
+    height: 16px;
+  }
+
+  /* ===== ЕДИНЫЙ CANVAS ===== */
+  #mainCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* ===== 3D КУБ (облегчённый) ===== */
+  .cube-scene {
+    position: fixed;
+    top: 45%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    z-index: 5;
+    pointer-events: none;
+    perspective: 1400px;
+    transform: translate(-50%, -50%);
+    will-change: transform, opacity;
+  }
+
+  .cube-wrapper {
+    width: 240px;
+    height: 240px;
+    transform-style: preserve-3d;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+  }
+
+  .cube-face {
+    position: absolute;
+    width: 240px;
+    height: 240px;
+    border: 2px solid var(--neon-cyan);
+    background:
+      linear-gradient(135deg, rgba(255, 0, 255, 0.08), rgba(0, 255, 255, 0.08)),
+      repeating-linear-gradient(0deg, transparent 0, transparent 29px, rgba(0, 255, 255, 0.12) 30px),
+      repeating-linear-gradient(90deg, transparent 0, transparent 29px, rgba(0, 255, 255, 0.12) 30px);
+    box-shadow:
+      inset 0 0 25px rgba(0, 255, 255, 0.35),
+      0 0 25px rgba(0, 255, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 72px;
+    color: var(--neon-pink);
+    text-shadow: 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink);
+  }
+
+  .face-front  { transform: translateZ(120px); }
+  .face-back   { transform: rotateY(180deg) translateZ(120px); }
+  .face-right  { transform: rotateY(90deg)  translateZ(120px); }
+  .face-left   { transform: rotateY(-90deg) translateZ(120px); }
+  .face-top    { transform: rotateX(90deg)  translateZ(120px); }
+  .face-bottom { transform: rotateX(-90deg) translateZ(120px); }
+
+  /* Аура через градиент, без filter:blur */
+  .cube-aura {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 460px; height: 460px;
+    margin-left: -230px; margin-top: -230px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+      rgba(255, 0, 255, 0.22) 0%,
+      rgba(0, 255, 255, 0.10) 40%,
+      transparent 65%);
+    animation: auraPulse 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes auraPulse {
+    0%, 100% { transform: scale(1); opacity: 0.75; }
+    50% { transform: scale(1.15); opacity: 1; }
+  }
+
+  /* Кольца — без box-shadow, только border */
+  .cube-ring {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 380px; height: 380px;
+    margin-left: -190px;
+    margin-top: -190px;
+    border: 1.5px solid var(--neon-cyan);
+    border-radius: 50%;
+    transform: rotateX(75deg);
+    pointer-events: none;
+    opacity: 0.85;
+  }
+
+  .cube-ring-2 {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 440px; height: 440px;
+    margin-left: -220px;
+    margin-top: -220px;
+    border: 1px dashed rgba(255, 0, 255, 0.6);
+    border-radius: 50%;
+    transform: rotateX(65deg) rotateY(20deg);
+    pointer-events: none;
+    opacity: 0.75;
+  }
+
+  @media (max-width: 900px) {
+    .cube-wrapper { width: 160px; height: 160px; }
+    .cube-face { width: 160px; height: 160px; font-size: 48px; }
+    .face-front  { transform: translateZ(80px); }
+    .face-back   { transform: rotateY(180deg) translateZ(80px); }
+    .face-right  { transform: rotateY(90deg)  translateZ(80px); }
+    .face-left   { transform: rotateY(-90deg) translateZ(80px); }
+    .face-top    { transform: rotateX(90deg)  translateZ(80px); }
+    .face-bottom { transform: rotateX(-90deg) translateZ(80px); }
+    .cube-aura { width: 300px; height: 300px; margin-left: -150px; margin-top: -150px; }
+    .cube-ring { width: 260px; height: 260px; margin-left: -130px; margin-top: -130px; }
+    .cube-ring-2 { width: 300px; height: 300px; margin-left: -150px; margin-top: -150px; }
+  }
+
+  /* ===== ПРОГРЕСС ===== */
+  .scroll-progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+    z-index: 9999;
+    will-change: width;
+  }
+
+  /* ===== НАВИГАЦИЯ (без backdrop-filter) ===== */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 24px 50px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 100;
+    background: linear-gradient(180deg, rgba(10,0,20,0.95) 0%, rgba(10,0,20,0.6) 70%, transparent 100%);
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 20px;
+    letter-spacing: 6px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 10px var(--neon-cyan);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    width: 12px; height: 12px;
+    background: var(--neon-pink);
+    box-shadow: 0 0 10px var(--neon-pink);
+    animation: logoSpin 3s linear infinite;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  }
+  @keyframes logoSpin { to { transform: rotate(360deg); } }
+
+  .nav-menu {
+    display: flex;
+    gap: 40px;
+    list-style: none;
+  }
+  .nav-menu a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    position: relative;
+    padding: 6px 12px;
+    transition: color 0.3s, border-color 0.3s;
+    border: 1px solid transparent;
+  }
+  .nav-menu a::before {
+    content: '>';
+    position: absolute;
+    left: -8px;
+    color: var(--neon-cyan);
+    opacity: 0;
+    transition: all 0.3s;
+  }
+  .nav-menu a:hover {
+    color: var(--neon-cyan);
+    border-color: var(--neon-cyan);
+    text-shadow: 0 0 10px var(--neon-cyan);
+  }
+  .nav-menu a:hover::before { opacity: 1; left: -18px; }
+
+  .nav-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--neon-pink);
+    text-transform: uppercase;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ===== КОНТЕНТ ===== */
+  main { position: relative; z-index: 10; }
+
+  section {
+    min-height: 100vh;
+    padding: 140px 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+  }
+
+  .hero {
+    align-items: center;
+    text-align: center;
+    padding-top: 100px;
+  }
+
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 24px;
+    border: 1px solid var(--neon-cyan);
+    background: rgba(0, 255, 255, 0.05);
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--neon-cyan);
+    margin-bottom: 40px;
+    text-shadow: 0 0 8px var(--neon-cyan);
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+    opacity: 0;
+    animation: fadeUp 1s 0.2s forwards;
+  }
+  .hero-eyebrow .dot {
+    width: 6px; height: 6px;
+    background: var(--neon-pink);
+    box-shadow: 0 0 8px var(--neon-pink);
+    animation: pulse 1s infinite;
+  }
+
+  .hero-title {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(48px, 11vw, 160px);
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    margin-bottom: 30px;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 11;
+    pointer-events: none;
+  }
+  .hero-title .line {
+    display: block;
+    overflow: hidden;
+  }
+  .hero-title .line span {
+    display: inline-block;
+    transform: translateY(110%);
+    animation: slideUp 1.2s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  }
+  .hero-title .line:nth-child(1) span { animation-delay: 0.1s; }
+  .hero-title .line:nth-child(2) span { animation-delay: 0.25s; }
+  .hero-title .line:nth-child(3) span { animation-delay: 0.4s; }
+
+  .hero-title em {
+    font-style: normal;
+    color: var(--neon-pink);
+    text-shadow: 0 0 15px var(--neon-pink), 0 0 40px var(--neon-pink);
+  }
+  .hero-title .cyan {
+    color: var(--neon-cyan);
+    text-shadow: 0 0 15px var(--neon-cyan), 0 0 40px var(--neon-cyan);
+  }
+
+  @keyframes slideUp { to { transform: translateY(0); } }
+
+  .hero-sub {
+    font-size: 15px;
+    max-width: 620px;
+    line-height: 1.8;
+    color: rgba(240, 230, 255, 0.65);
+    margin-bottom: 50px;
+    opacity: 0;
+    animation: fadeUp 1s 0.9s forwards;
+    position: relative;
+    z-index: 11;
+    letter-spacing: 1px;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    opacity: 0;
+    animation: fadeUp 1s 1.1s forwards;
+    position: relative;
+    z-index: 11;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 32px;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--neon-cyan);
+    border: 1.5px solid var(--neon-cyan);
+    background: rgba(0, 255, 255, 0.05);
+    transition: transform 0.3s, background 0.3s, color 0.3s;
+    cursor: crosshair;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    text-shadow: 0 0 8px var(--neon-cyan);
+  }
+  .btn:hover {
+    background: rgba(0, 255, 255, 0.15);
+    color: #fff;
+    transform: translateY(-3px);
+  }
+
+  .btn-primary {
+    color: var(--neon-pink);
+    border-color: var(--neon-pink);
+    background: rgba(255, 0, 255, 0.05);
+    text-shadow: 0 0 8px var(--neon-pink);
+  }
+  .btn-primary:hover {
+    background: rgba(255, 0, 255, 0.15);
+    color: #fff;
+  }
+
+  .scroll-hint {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    opacity: 0;
+    animation: fadeUp 1s 1.5s forwards;
+  }
+  .scroll-hint span {
+    font-size: 10px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px var(--neon-cyan);
+  }
+  .scroll-hint .line {
+    width: 2px;
+    height: 50px;
+    background: linear-gradient(to bottom, var(--neon-cyan), transparent);
+    animation: scrollLine 2.2s infinite;
+  }
+  @keyframes scrollLine {
+    0% { transform: scaleY(0); transform-origin: top; }
+    50% { transform: scaleY(1); transform-origin: top; }
+    50.01% { transform: scaleY(1); transform-origin: bottom; }
+    100% { transform: scaleY(0); transform-origin: bottom; }
+  }
+
+  /* ===== СЕКЦИИ ===== */
+  .section-header {
+    max-width: 1000px;
+    margin-bottom: 70px;
+  }
+  .section-num {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--neon-pink);
+    margin-bottom: 22px;
+    text-shadow: 0 0 8px var(--neon-pink);
+  }
+  .section-num::before {
+    content: '';
+    width: 40px;
+    height: 1px;
+    background: var(--neon-pink);
+  }
+
+  .section-title {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(38px, 6.5vw, 90px);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+  .section-title .cyan {
+    color: var(--neon-cyan);
+    text-shadow: 0 0 15px var(--neon-cyan);
+  }
+  .section-title .pink {
+    color: var(--neon-pink);
+    text-shadow: 0 0 15px var(--neon-pink);
+  }
+
+  /* ===== КАРТОЧКИ (облегчённые) ===== */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 22px;
+  }
+
+  .feature {
+    position: relative;
+    padding: 40px 34px;
+    border: 1.5px solid rgba(0, 255, 255, 0.3);
+    background: linear-gradient(135deg, rgba(255, 0, 255, 0.03), rgba(0, 255, 255, 0.03));
+    transition: transform 0.4s, border-color 0.4s, background 0.4s;
+    overflow: hidden;
+    clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+  }
+
+  .feature:hover {
+    border-color: var(--neon-cyan);
+    transform: translateY(-6px);
+    background: linear-gradient(135deg, rgba(255, 0, 255, 0.08), rgba(0, 255, 255, 0.08));
+  }
+
+  .feature::after {
+    content: '';
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 12px; height: 12px;
+    border-top: 2px solid var(--neon-pink);
+    border-right: 2px solid var(--neon-pink);
+    transition: all 0.4s;
+  }
+  .feature:hover::after {
+    top: 12px; right: 12px;
+    width: 20px; height: 20px;
+  }
+
+  .feature-icon {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--neon-pink);
+    text-shadow: 0 0 12px var(--neon-pink);
+    margin-bottom: 20px;
+  }
+
+  .feature h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px var(--neon-cyan);
+  }
+
+  .feature p {
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: rgba(240, 230, 255, 0.65);
+    margin-bottom: 22px;
+    letter-spacing: 0.5px;
+  }
+
+  .feature-tag {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid var(--neon-pink);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--neon-pink);
+    text-shadow: 0 0 6px var(--neon-pink);
+  }
+
+  /* ===== STATS ===== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 40px;
+    margin-top: 60px;
+    padding: 60px 0;
+    border-top: 1px solid rgba(0, 255, 255, 0.15);
+    border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+  }
+
+  .stat-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(46px, 6.5vw, 90px);
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 15px var(--neon-cyan);
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .stat-value small {
+    font-size: 0.35em;
+    color: var(--neon-pink);
+    text-shadow: 0 0 8px var(--neon-pink);
+  }
+
+  .stat-label {
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: rgba(240, 230, 255, 0.5);
+    margin-top: 20px;
+  }
+
+  /* ===== MARQUEE ===== */
+  .marquee {
+    padding: 40px 0;
+    overflow: hidden;
+    border-top: 1px solid rgba(255, 0, 255, 0.2);
+    border-bottom: 1px solid rgba(255, 0, 255, 0.2);
+  }
+
+  .marquee-track {
+    display: flex;
+    gap: 60px;
+    animation: marquee 30s linear infinite;
+    white-space: nowrap;
+    width: max-content;
+    will-change: transform;
+  }
+  .marquee-track span {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(36px, 6vw, 80px);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 60px;
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--neon-cyan);
+  }
+  .marquee-track span:nth-child(even) {
+    -webkit-text-stroke: 1.5px var(--neon-pink);
+  }
+  .marquee-track span::after {
+    content: '◆';
+    color: var(--neon-pink);
+    font-size: 0.5em;
+    -webkit-text-stroke: 0;
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* ===== CTA ===== */
+  .cta-section {
+    text-align: center;
+    align-items: center;
+  }
+  .cta-title {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(40px, 8vw, 130px);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+  .cta-title .pink {
+    color: var(--neon-pink);
+    text-shadow: 0 0 20px var(--neon-pink);
+  }
+
+  /* ===== FOOTER ===== */
+  footer {
+    padding: 90px 50px 40px;
+    border-top: 1px solid rgba(0, 255, 255, 0.15);
+    position: relative;
+    z-index: 10;
+  }
+
+  .footer-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 70px;
+    flex-wrap: wrap;
+    gap: 40px;
+  }
+
+  .footer-brand { max-width: 340px; }
+
+  .footer-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 20px;
+    letter-spacing: 6px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px var(--neon-cyan);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .footer-brand p {
+    color: rgba(240, 230, 255, 0.5);
+    font-size: 13px;
+    line-height: 1.75;
+    letter-spacing: 0.5px;
+  }
+
+  .footer-cols {
+    display: flex;
+    gap: 70px;
+    flex-wrap: wrap;
+  }
+
+  .footer-col h4 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--neon-pink);
+    margin-bottom: 20px;
+    text-shadow: 0 0 6px var(--neon-pink);
+  }
+
+  .footer-col a {
+    display: block;
+    color: rgba(240, 230, 255, 0.5);
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 8px;
+    transition: color 0.3s, padding-left 0.3s;
+    letter-spacing: 1px;
+  }
+  .footer-col a:hover {
+    color: var(--neon-cyan);
+    padding-left: 8px;
+  }
+
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 35px;
+    border-top: 1px solid rgba(255, 0, 255, 0.15);
+    font-size: 11px;
+    color: rgba(240, 230, 255, 0.4);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+
+  /* ===== REVEAL ===== */
+  .reveal {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 0.8s, transform 0.8s;
+  }
+  .reveal.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ===== АДАПТИВ ===== */
+  @media (max-width: 900px) {
+    nav { padding: 18px 20px; }
+    .nav-menu { display: none; }
+    .nav-status { display: none; }
+    section { padding: 100px 22px; }
+    footer { padding: 60px 22px 30px; }
+    .footer-cols { gap: 35px; }
+    .hero-actions { flex-direction: column; width: 100%; }
+    .btn { width: 100%; justify-content: center; }
+    .logo { font-size: 15px; letter-spacing: 4px; }
+    .scanlines { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<!-- ПРЕЛОАДЕР -->
+<div class="preloader" id="preloader">
+  <div class="preloader-title">SYSTEM BOOT</div>
+  <div class="preloader-counter" id="preloaderCounter">0%</div>
+  <div class="preloader-bar" id="preloaderBar"></div>
+  <div class="preloader-log" id="preloaderLog">INITIALIZING...</div>
+</div>
+
+<div class="scroll-progress" id="scrollProgress"></div>
+
+<!-- ЕДИНЫЙ CANVAS -->
+<canvas id="mainCanvas"></canvas>
+
+<!-- 3D КУБ -->
+<div class="cube-scene" id="cubeScene">
+  <div class="cube-aura"></div>
+  <div class="cube-ring"></div>
+  <div class="cube-ring-2"></div>
+  <div class="cube-wrapper" id="cubeWrapper">
+    <div class="cube-face face-front">N</div>
+    <div class="cube-face face-back">O</div>
+    <div class="cube-face face-right">E</div>
+    <div class="cube-face face-left">N</div>
+    <div class="cube-face face-top">◆</div>
+    <div class="cube-face face-bottom">9</div>
+  </div>
+</div>
+
+<!-- НАВИГАЦИЯ -->
+<nav>
+  <div class="logo">
+    <div class="logo-mark"></div>
+    NEON_DRIFT
+  </div>
+  <ul class="nav-menu">
+    <li><a href="#essence">/ SYS</a></li>
+    <li><a href="#worlds">/ NETS</a></li>
+    <li><a href="#numbers">/ DATA</a></li>
+    <li><a href="#join">/ LINK</a></li>
+  </ul>
+  <div class="nav-status">
+    <div class="status-dot"></div>
+    <span>LIVE // 42 847</span>
+  </div>
+</nav>
+
+<main>
+  <section class="hero">
+    <div class="hero-eyebrow">
+      <span class="dot"></span>
+      // CONNECTION ESTABLISHED 2099
+    </div>
+    <h1 class="hero-title">
+      <span class="line"><span>NEON</span></span>
+      <span class="line"><span class="cyan">DRIFT</span></span>
+      <span class="line"><span><em>CYBERSPACE</em></span></span>
+    </h1>
+    <p class="hero-sub">Добро пожаловать в цифровой фронтир. Мы строим интерфейсы будущего — там, где реальность растворяется в неоновом свете, а данные становятся искусством.</p>
+    <div class="hero-actions">
+      <a href="#essence" class="btn btn-primary">◢ Войти в сеть</a>
+      <a href="#worlds" class="btn">Исследовать →</a>
+    </div>
+    <div class="scroll-hint">
+      <span>SCROLL</span>
+      <div class="line"></div>
+    </div>
+  </section>
+
+  <div class="marquee">
+    <div class="marquee-track">
+      <span>Digital</span><span>Reality</span><span>Neon</span><span>Future</span>
+      <span>Digital</span><span>Reality</span><span>Neon</span><span>Future</span>
+    </div>
+  </div>
+
+  <section id="essence">
+    <div class="section-header reveal">
+      <div class="section-num">// 01 — SYSTEM</div>
+      <h2 class="section-title">Мы строим<br><span class="cyan">цифровые</span> <span class="pink">миры</span></h2>
+    </div>
+    <div class="features">
+      <div class="feature reveal">
+        <div class="feature-icon">◢</div>
+        <h3>Hyper Interface</h3>
+        <p>Интерфейсы, которые реагируют быстрее мысли. Каждый клик, каждый скролл — часть единой живой системы.</p>
+        <span class="feature-tag">// REACTIVE</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">◣</div>
+        <h3>Neon Depth</h3>
+        <p>Многослойная глубина из света и тени. Пространство, в котором можно потеряться и найти себя заново.</p>
+        <span class="feature-tag">// 3D LAYERS</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">◆</div>
+        <h3>Data Pulse</h3>
+        <p>Данные превращаются в свет. Информация течёт по экрану как кровь по венам цифрового организма.</p>
+        <span class="feature-tag">// LIVE DATA</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">◇</div>
+        <h3>Cyber Motion</h3>
+        <p>Каждое движение выверено до миллисекунды. Ритм, вес, инерция — физика нового цифрового мира.</p>
+        <span class="feature-tag">// MOTION</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">▣</div>
+        <h3>Raw Identity</h3>
+        <p>Никаких шаблонов. Каждый проект — отдельная вселенная со своим характером и правилами.</p>
+        <span class="feature-tag">// CUSTOM</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">✦</div>
+        <h3>Infinite Loop</h3>
+        <p>Опыт продолжается за пределами экрана — в воображении, в памяти, в следующих итерациях.</p>
+        <span class="feature-tag">// ∞</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="worlds">
+    <div class="section-header reveal">
+      <div class="section-num">// 02 — NETWORKS</div>
+      <h2 class="section-title">Три <span class="pink">сети</span>,<br>три <span class="cyan">реальности</span></h2>
+    </div>
+    <div class="features">
+      <div class="feature reveal">
+        <div class="feature-icon">◐</div>
+        <h3>NEBULA_OS</h3>
+        <p>Операционная система для снов. Здесь гравитация течёт как вода, а код пишется на языке света.</p>
+        <span class="feature-tag">// DREAM</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">◑</div>
+        <h3>QUANTUM_NET</h3>
+        <p>Квантовая сеть, где объекты существуют во всех состояниях одновременно, пока ты не посмотришь.</p>
+        <span class="feature-tag">// MULTIVERSE</span>
+      </div>
+      <div class="feature reveal">
+        <div class="feature-icon">◒</div>
+        <h3>AURORA_LINK</h3>
+        <p>Прямое подключение к полярному сиянию. Свет становится языком, звук — интерфейсом.</p>
+        <span class="feature-tag">// SENSORY</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="numbers">
+    <div class="section-header reveal">
+      <div class="section-num">// 03 — DATA STREAM</div>
+      <h2 class="section-title">Цифры, которые<br><span class="cyan">говорят</span> сами за себя</h2>
+    </div>
+    <div class="stats-grid">
+      <div class="stat reveal">
+        <div class="stat-value" data-target="847"><span class="num">0</span><small>+</small></div>
+        <div class="stat-label">// ПРОЕКТОВ</div>
+      </div>
+      <div class="stat reveal">
+        <div class="stat-value" data-target="42"><span class="num">0</span><small>M</small></div>
+        <div class="stat-label">// ЮЗЕРОВ ОНЛАЙН</div>
+      </div>
+      <div class="stat reveal">
+        <div class="stat-value" data-target="99"><span class="num">0</span><small>%</small></div>
+        <div class="stat-label">// FPS STABLE</div>
+      </div>
+      <div class="stat reveal">
+        <div class="stat-value" data-target="12"><span class="num">0</span><small>ms</small></div>
+        <div class="stat-label">// ОТКЛИК</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section" id="join">
+    <div class="reveal">
+      <div class="section-num" style="justify-content:center;display:flex;">// 04 — ESTABLISH LINK</div>
+      <h2 class="cta-title">Готов <span class="pink">подключиться</span><br>к будущему?</h2>
+      <div class="hero-actions" style="justify-content:center;">
+        <a href="#" class="btn btn-primary">◢ Начать проект</a>
+        <a href="#" class="btn">Связаться →</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <div class="footer-logo">
+        <div class="logo-mark"></div>
+        NEON_DRIFT
+      </div>
+      <p>Строим цифровые вселенные на границе реальности и воображения. Там, где свет становится кодом.</p>
+    </div>
+    <div class="footer-cols">
+      <div class="footer-col">
+        <h4>// NAV</h4>
+        <a href="#essence">System</a>
+        <a href="#worlds">Networks</a>
+        <a href="#numbers">Data</a>
+        <a href="#join">Link</a>
+      </div>
+      <div class="footer-col">
+        <h4>// SOCIAL</h4>
+        <a href="#">Twitter / X</a>
+        <a href="#">Instagram</a>
+        <a href="#">Dribbble</a>
+        <a href="#">GitHub</a>
+      </div>
+      <div class="footer-col">
+        <h4>// LEGAL</h4>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Cookies</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2099 NEON_DRIFT // ALL RIGHTS RESERVED</span>
+    <span>POWERED BY ◆ LIGHT</span>
+  </div>
+</footer>
+
+<script>
+/* ========================================================
+   ЕДИНЫЙ CANVAS — сетка + частицы в одном цикле
+======================================================== */
+(function() {
+  const canvas = document.getElementById('mainCanvas');
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  let w, h, dpr;
+  let particles = [];
+  let mouseX = 0, mouseY = 0;
+  let targetMX = 0, targetMY = 0;
+  let scrollNorm = 0;
+  let smoothScroll = 0;
+  let gridOffset = 0;
+
+  const COLORS = ['0, 255, 255', '255, 0, 255', '176, 38, 255'];
+
+  // Адаптивное число частиц
+  function getParticleCount() {
+    const w = window.innerWidth;
+    if (w < 600) return 25;
+    if (w < 1024) return 45;
+    return 70;
+  }
+
+  class Particle {
+    constructor() {
+      this.x = Math.random() * w;
+      this.y = Math.random() * h;
+      this.vx = (Math.random() - 0.5) * 0.35;
+      this.vy = (Math.random() - 0.5) * 0.35;
+      this.r = Math.random() * 1.6 + 0.5;
+      this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      this.baseAlpha = Math.random() * 0.5 + 0.35;
+      this.phase = Math.random() * Math.PI * 2;
+    }
+    update(t) {
+      this.x += this.vx;
+      this.y += this.vy;
+
+      const dx = this.x - mouseX;
+      const dy = this.y - mouseY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < 12000) {
+        const dist = Math.sqrt(distSq) || 1;
+        const force = (12000 - distSq) / 12000;
+        this.x += (dx / dist) * force * 1.5;
+        this.y += (dy / dist) * force * 1.5;
+      }
+
+      if (this.x < 0) this.x = w;
+      if (this.x > w) this.x = 0;
+      if (this.y < 0) this.y = h;
+      if (this.y > h) this.y = 0;
+
+      this.alpha = this.baseAlpha + Math.sin(t * 0.001 + this.phase) * 0.2;
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${this.color}, ${this.alpha})`;
+      ctx.fill();
+    }
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 1.75); // Ограничиваем DPR
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const count = getParticleCount();
+    particles = [];
+    for (let i = 0; i < count; i++) particles.push(new Particle());
+  }
+
+  // Сетка — рисуем ТОЛЬКО в нижней половине экрана
+  function drawGrid() {
+    const horizonY = h * 0.55;
+    const vanishX = w / 2;
+
+    // Горизонтальные линии — 15 линий
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 15; i++) {
+      const t = (i + gridOffset / 60) / 15;
+      const y = horizonY + (h - horizonY) * Math.pow(t, 2.4);
+      if (y > h) continue;
+      const alpha = Math.min(1, t * 2) * 0.5;
+      ctx.strokeStyle = `rgba(0, 255, 255, ${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Вертикальные линии — 30 линий
+    for (let i = -15; i <= 15; i++) {
+      const x = vanishX + i * (w / 8);
+      const alpha = Math.max(0.08, 0.5 - Math.abs(i) / 30);
+      ctx.strokeStyle = `rgba(255, 0, 255, ${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(vanishX, horizonY);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+
+    // Свечение горизонта — градиент без shadow
+    const grad = ctx.createLinearGradient(0, horizonY - 30, 0, horizonY + 8);
+    grad.addColorStop(0, 'rgba(255, 0, 255, 0)');
+    grad.addColorStop(0.7, 'rgba(255, 0, 255, 0.25)');
+    grad.addColorStop(1, 'rgba(0, 255, 255, 0.4)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, horizonY - 30, w, 40);
+  }
+
+  function drawConnections() {
+    const maxDist = 110;
+    const maxDistSq = maxDist * maxDist;
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const a = particles[i];
+        const b = particles[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < maxDistSq) {
+          const alpha = (1 - dSq / maxDistSq) * 0.2;
+          ctx.strokeStyle = `rgba(0, 255, 255, ${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  let lastTime = 0;
+  function loop(t) {
+    // Ограничиваем частоту до ~60fps
+    if (t - lastTime < 16) {
+      requestAnimationFrame(loop);
+      return;
+    }
+    lastTime = t;
+
+    mouseX += (targetMX - mouseX) * 0.08;
+    mouseY += (targetMY - mouseY) * 0.08;
+    smoothScroll += (scrollNorm - smoothScroll) * 0.06;
+
+    // Обновляем скорость сетки
+    gridOffset = (gridOffset + 0.5 * (1 + smoothScroll * 0.5)) % 60;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Сетка (только если экран достаточно большой)
+    if (w > 700) drawGrid();
+
+    // Частицы
+    for (let i = 0; i < particles.length; i++) {
+      particles[i].update(t);
+      particles[i].draw();
+    }
+
+    // Соединения
+    drawConnections();
+
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', (e) => {
+    targetMX = e.clientX;
+    targetMY = e.clientY;
+  }, { passive: true });
+  window.addEventListener('scroll', () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    scrollNorm = max > 0 ? window.scrollY / max : 0;
+  }, { passive: true });
+
+  resize();
+  requestAnimationFrame(loop);
+})();
+
+/* ========================================================
+   ПРЕЛОАДЕР
+======================================================== */
+(function() {
+  const preloader = document.getElementById('preloader');
+  const counter = document.getElementById('preloaderCounter');
+  const bar = document.getElementById('preloaderBar');
+  const log = document.getElementById('preloaderLog');
+
+  const logs = [
+    'INITIALIZING...',
+    'LOADING GRID...',
+    'CALIBRATING NEON...',
+    'SYNCING DATA...',
+    'ESTABLISHING LINK...',
+    'READY.'
+  ];
+
+  let val = 0;
+  document.body.style.overflow = 'hidden';
+
+  const timer = setInterval(() => {
+    val += Math.floor(Math.random() * 8) + 3;
+    if (val >= 100) {
+      val = 100;
+      clearInterval(timer);
+      setTimeout(() => {
+        preloader.classList.add('done');
+        document.body.style.overflow = '';
+      }, 400);
+    }
+    counter.textContent = val + '%';
+    bar.style.width = val + '%';
+
+    const idx = Math.min(Math.floor(val / 20), logs.length - 1);
+    log.textContent = logs[idx];
+  }, 60);
+})();
+
+/* ========================================================
+   3D КУБ
+======================================================== */
+(function() {
+  const cubeScene = document.getElementById('cubeScene');
+  const cubeWrapper = document.getElementById('cubeWrapper');
+  if (!cubeScene || !cubeWrapper) return;
+
+  let targetRotX = 0, targetRotY = 0;
+  let currentRotX = 0, currentRotY = 0;
+  let scrollN = 0, smoothScrollN = 0;
+
+  document.addEventListener('mousemove', (e) => {
+    const nx = (e.clientX / window.innerWidth) * 2 - 1;
+    const ny = (e.clientY / window.innerHeight) * 2 - 1;
+    targetRotX = ny * -25;
+    targetRotY = nx * 25;
+  }, { passive: true });
+
+  window.addEventListener('scroll', () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    scrollN = max > 0 ? window.scrollY / max : 0;
+  }, { passive: true });
+
+  function tick() {
+    currentRotX += (targetRotX - currentRotX) * 0.06;
+    currentRotY += (targetRotY - currentRotY) * 0.06;
+    smoothScrollN += (scrollN - smoothScrollN) * 0.06;
+
+    const auto = performance.now() * 0.02;
+    cubeWrapper.style.transform =
+      `translate(-50%, -50%) ` +
+      `rotateX(${currentRotX}deg) ` +
+      `rotateY(${auto + currentRotY}deg) ` +
+      `scale(${1 - smoothScrollN * 0.4})`;
+
+    cubeScene.style.transform =
+      `translate(-50%, -50%) ` +
+      `translate3d(${currentRotY * 4}px, ${-smoothScrollN * 100 + currentRotX * 4}px, 0)`;
+
+    cubeScene.style.opacity = 1 - smoothScrollN * 0.9;
+
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+/* ========================================================
+   ПРОГРЕСС СКРОЛЛА
+======================================================== */
+(function() {
+  const bar = document.getElementById('scrollProgress');
+  let ticking = false;
+  function update() {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const p = max > 0 ? (window.scrollY / max) * 100 : 0;
+    bar.style.width = p + '%';
+    ticking = false;
+  }
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      requestAnimationFrame(update);
+      ticking = true;
+    }
+  }, { passive: true });
+})();
+
+/* ========================================================
+   REVEAL ON SCROLL
+======================================================== */
+(function() {
+  const els = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window)) {
+    els.forEach(el => el.classList.add('active'));
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('active'), i * 70);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+  els.forEach(el => observer.observe(el));
+})();
+
+/* ========================================================
+   СЧЁТЧИКИ
+======================================================== */
+(function() {
+  const stats = document.querySelectorAll('.stat-value');
+  if (!('IntersectionObserver' in window)) return;
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const target = parseInt(el.dataset.target);
+        const numEl = el.querySelector('.num');
+        const duration = 1500;
+        const start = performance.now();
+
+        function step(now) {
+          const p = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - p, 3);
+          numEl.textContent = Math.floor(eased * target);
+          if (p < 1) requestAnimationFrame(step);
+          else numEl.textContent = target;
+        }
+        requestAnimationFrame(step);
+        observer.unobserve(el);
+      }
+    });
+  }, { threshold: 0.5 });
+
+  stats.forEach(el => observer.observe(el));
+})();
+
+/* ========================================================
+   ПЛАВНЫЙ ПЕРЕХОД ПО ЯКОРЯМ
+======================================================== */
+(function() {
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href');
+      if (id.length > 1) {
+        const target = document.querySelector(id);
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
